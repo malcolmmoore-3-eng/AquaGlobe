@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>AquaGlobe – Global Water Quality Tracker</title>
+<script src="https://cdn.tailwindcss.com/3.4.17"></script>
+<style>
+:root{color-scheme:light;--bg:#f8fafc;--fg:#1e293b;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){color-scheme:dark;--bg:#020617;--fg:#e2e8f0}}
+body{background:var(--bg);color:var(--fg);font-family:ui-sans-serif,system-ui,sans-serif}
+@keyframes wv{from{mask-position:0 bottom;-webkit-mask-position:0 bottom}to{mask-position:var(--s) bottom;-webkit-mask-position:var(--s) bottom}}
+.wave{position:absolute;left:0;right:0;bottom:0;mask-repeat:repeat-x;-webkit-mask-repeat:repeat-x;animation:wv linear infinite;
+background:linear-gradient(90deg,#67e8f9 0%,#22d3ee 14%,#5eead4 28%,#a7c957 44%,#8f8a3c 58%,#7a5c2b 74%,#4a3318 90%,#2a1d0e 100%)}
+.wave::after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent 32%,rgba(40,25,8,.35) 68%,rgba(20,12,4,.6) 100%)}
+.wave i{position:absolute;inset:0;background-image:radial-gradient(circle,rgba(50,32,10,.95) 0 2px,transparent 3px),radial-gradient(circle,rgba(150,115,55,.85) 0 1.5px,transparent 2.5px),radial-gradient(circle,rgba(20,14,6,.9) 0 3px,transparent 4px);background-size:46px 38px,29px 41px,83px 67px;background-position:0 0,13px 9px,30px 20px;-webkit-mask-image:linear-gradient(90deg,transparent 26%,#000 88%);mask-image:linear-gradient(90deg,transparent 26%,#000 88%);animation:dr 16s linear infinite;z-index:1}
+@keyframes dr{to{background-position:46px 38px,42px 50px,113px 87px}}
+@media (prefers-reduced-motion:reduce){.wave,.wave i{animation:none}}
+</style>
+</head>
+<body>
+<header class="sticky top-0 z-40 border-b border-slate-200 dark:border-slate-800 bg-white/90 dark:bg-slate-900/90 backdrop-blur">
+  <nav class="mx-auto flex max-w-6xl items-center justify-between gap-2 px-4 py-3">
+    <button data-go="home" class="font-bold text-lg">💧 AquaGlobe</button>
+    <div class="flex items-center gap-1 text-sm">
+      <button data-go="home" class="nav px-3 py-2 rounded-lg">Home</button>
+      <button data-go="countries" class="nav px-3 py-2 rounded-lg">Countries</button>
+      <button data-go="how" class="nav px-3 py-2 rounded-lg">How it works</button>
+      <span id="badge" class="hidden ml-1 rounded-full bg-emerald-100 text-emerald-800 px-3 py-1 text-xs font-semibold">🛡 Admin</span>
+    </div>
+  </nav>
+</header>
+<main id="app"></main>
+<footer class="border-t border-slate-200 dark:border-slate-800 mt-10">
+  <div class="mx-auto flex max-w-6xl flex-col sm:flex-row items-center justify-between gap-2 px-4 py-5 text-sm opacity-70">
+    <p>© 2026 AquaGlobe · Global Water Quality Tracker</p>
+    <button id="adminBtn" class="text-xs hover:opacity-100">🔒 Admin Login</button>
+  </div>
+</footer>
+<div id="modal"></div>
+
+<script>
+const NAMES="Afghanistan|Albania|Algeria|Andorra|Angola|Antigua and Barbuda|Argentina|Armenia|Australia|Austria|Azerbaijan|Bahamas|Bahrain|Bangladesh|Barbados|Belarus|Belgium|Belize|Benin|Bhutan|Bolivia|Bosnia and Herzegovina|Botswana|Brazil|Brunei|Bulgaria|Burkina Faso|Burundi|Cabo Verde|Cambodia|Cameroon|Canada|Central African Republic|Chad|Chile|China|Colombia|Comoros|Congo (Republic)|Congo (Democratic Republic)|Costa Rica|Côte d’Ivoire|Croatia|Cuba|Cyprus|Czechia|Denmark|Djibouti|Dominica|Dominican Republic|Ecuador|Egypt|El Salvador|Equatorial Guinea|Eritrea|Estonia|Eswatini|Ethiopia|Fiji|Finland|France|Gabon|Gambia|Georgia|Germany|Ghana|Greece|Grenada|Guatemala|Guinea|Guinea-Bissau|Guyana|Haiti|Honduras|Hungary|Iceland|India|Indonesia|Iran|Iraq|Ireland|Israel|Italy|Jamaica|Japan|Jordan|Kazakhstan|Kenya|Kiribati|Kuwait|Kyrgyzstan|Laos|Latvia|Lebanon|Lesotho|Liberia|Libya|Liechtenstein|Lithuania|Luxembourg|Madagascar|Malawi|Malaysia|Maldives|Mali|Malta|Marshall Islands|Mauritania|Mauritius|Mexico|Micronesia|Moldova|Monaco|Mongolia|Montenegro|Morocco|Mozambique|Myanmar|Namibia|Nauru|Nepal|Netherlands|New Zealand|Nicaragua|Niger|Nigeria|North Korea|North Macedonia|Norway|Oman|Pakistan|Palau|Palestine|Panama|Papua New Guinea|Paraguay|Peru|Philippines|Poland|Portugal|Qatar|Romania|Russia|Rwanda|Saint Kitts and Nevis|Saint Lucia|Saint Vincent and the Grenadines|Samoa|San Marino|São Tomé and Príncipe|Saudi Arabia|Senegal|Serbia|Seychelles|Sierra Leone|Singapore|Slovakia|Slovenia|Solomon Islands|Somalia|South Africa|South Korea|South Sudan|Spain|Sri Lanka|Sudan|Suriname|Sweden|Switzerland|Syria|Tajikistan|Tanzania|Thailand|Timor-Leste|Togo|Tonga|Trinidad and Tobago|Tunisia|Türkiye|Turkmenistan|Tuvalu|Uganda|Ukraine|United Arab Emirates|United Kingdom|United States|Uruguay|Uzbekistan|Vanuatu|Vatican City|Venezuela|Vietnam|Yemen|Zambia|Zimbabwe".split("|");
+const slug=n=>n.normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/(^-|-$)/g,"");
+const COUNTRIES=[...NAMES,"Wonderland"].map(n=>({id:slug(n),name:n})).sort((a,b)=>a.name.localeCompare(b.name));
+const SAN=["Safely managed","Basic","Limited","Unimproved / none"];
+const rnd=(a,b)=>Math.random()*(b-a)+a;
+const SEED={wonderland:{finished:true,safetyIndex:Math.round(rnd(5,98)),ph:+rnd(5.5,9).toFixed(1),sanitation:SAN[Math.floor(Math.random()*SAN.length)],description:"It’s wonderland"}};
+const ADMIN_HASH="aa0043e744aedf748d1afda439f50d43ea5117e7d032a10e35afbf0f51417b20";
+
+let S={page:"home",admin:false,q:"",filter:"all",draft:null};
+try{S.admin=sessionStorage.getItem("ag_admin")==="1"}catch(e){}
+try{S.draft=JSON.parse(localStorage.getItem("ag_draft"))}catch(e){}
+const data=()=>S.admin&&S.draft?S.draft:SEED;
+const $=s=>document.querySelector(s);
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const status=v=>v>=70?["Safe","bg-emerald-100 text-emerald-800","bg-emerald-500"]:v>=40?["Moderate","bg-amber-100 text-amber-800","bg-amber-500"]:["Critical","bg-red-100 text-red-800","bg-red-500"];
+
+const MASK=(()=>{const p="<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1200 120' preserveAspectRatio='none'><path d='M0 60 C150 20 450 100 600 60 C750 20 1050 100 1200 60 V120 H0 Z'/></svg>";return `url("data:image/svg+xml,${encodeURIComponent(p)}")`})();
+const waves=[[90,1700,26,.35,1],[75,1300,19,.5,-1],[60,1000,14,.7,1],[45,800,10,1,-1]].map(([h,w,d,o,r])=>`<div class="wave" style="height:${h}px;opacity:${o};-webkit-mask-image:${MASK};mask-image:${MASK};-webkit-mask-size:${w}px 100%;mask-size:${w}px 100%;animation-duration:${d}s;--s:${r*w}px"><i></i></div>`).join("");
+
+const BIG=(()=>{let k=7;const r=()=>(k=k*16807%2147483647)/2147483647;
+const face="M200,400 C200,300 280,190 420,130 C520,95 640,85 760,95 C920,108 1080,120 1200,125 L1200,400 Z";
+let sp="",sk="",ln="";
+for(let i=0;i<80;i++){const x=330-r()*300,y=175-r()*165;sp+=`<circle cx="${x.toFixed(0)}" cy="${y.toFixed(0)}" r="${(.8+r()*3).toFixed(1)}" fill="#fff" opacity="${(.35+r()*.55).toFixed(2)}"/>`}
+for(let i=0;i<130;i++){const x=480+r()*720,y=115+r()*285,o=Math.min(1,(x-480)/600);sk+=`<circle cx="${x.toFixed(0)}" cy="${y.toFixed(0)}" r="${(1+r()*3.2).toFixed(1)}" fill="${r()>.5?"#3a2810":"#8a6a34"}" opacity="${(o*.85).toFixed(2)}"/>`}
+for(let j=1;j<=7;j++)ln+=`<path d="M${200+j*32},400 C${215+j*32},300 ${300+j*26},200 ${430+j*14},${150+j*3} C600,${112+j*2} 800,${110+j*7} 1200,${135+j*16}" fill="none" stroke="#fff" stroke-opacity=".13" stroke-width="2"/>`;
+return `<svg aria-hidden="true" viewBox="0 0 1200 400" preserveAspectRatio="none" class="absolute inset-x-0 bottom-0 block w-full pointer-events-none" style="height:clamp(200px,32vw,460px)"><defs>
+<linearGradient id="wf" gradientUnits="userSpaceOnUse" x1="200" x2="1200" y1="0" y2="0"><stop offset="0" stop-color="#34d8c4"/><stop offset=".18" stop-color="#1fb5b8"/><stop offset=".35" stop-color="#3a9fb0"/><stop offset=".52" stop-color="#8fae55"/><stop offset=".72" stop-color="#7a5c2b"/><stop offset="1" stop-color="#2a1d0e"/></linearGradient>
+<linearGradient id="vs" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".3"/><stop offset=".45" stop-color="#fff" stop-opacity="0"/><stop offset="1" stop-color="#001a2c" stop-opacity=".35"/></linearGradient>
+<linearGradient id="mk" x1="0" x2="1"><stop offset=".3" stop-color="#1c1006" stop-opacity="0"/><stop offset="1" stop-color="#1c1006" stop-opacity=".5"/></linearGradient>
+<linearGradient id="cf" gradientUnits="userSpaceOnUse" x1="420" x2="1200" y1="0" y2="0"><stop offset="0" stop-color="#fff"/><stop offset=".5" stop-color="#d8c996"/><stop offset="1" stop-color="#6b5330"/></linearGradient>
+<clipPath id="fc"><path d="${face}"/></clipPath><filter id="b6"><feGaussianBlur stdDeviation="6"/></filter><filter id="b2"><feGaussianBlur stdDeviation="1.5"/></filter></defs>
+<path d="${face}" fill="url(#wf)"/>
+<g clip-path="url(#fc)"><rect width="1200" height="400" fill="url(#vs)"/>${ln}<path d="M236,400 C200,330 235,245 305,205 C345,265 335,335 305,400Z" fill="#c9fff0" opacity=".55" filter="url(#b6)"/><rect x="200" width="1000" height="400" fill="url(#mk)"/>${sk}</g>
+<path d="M425,128 C335,148 262,205 238,285" fill="none" stroke="#fff" stroke-opacity=".6" stroke-width="7" stroke-linecap="round" filter="url(#b2)"/>
+<path d="M420,130 C520,95 640,85 760,95 C920,108 1080,120 1200,125" fill="none" stroke="url(#cf)" stroke-width="6" filter="url(#b2)"/>
+<ellipse cx="190" cy="130" rx="130" ry="80" fill="#fff" opacity=".45" filter="url(#b6)"/><g filter="url(#b2)">${sp}</g></svg>`})();
+const HAT=`<svg viewBox="0 0 120 100" class="h-20 w-20" role="img" aria-label="Under construction"><defs><pattern id="st" width="16" height="16" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="8" height="16" fill="#facc15"/><rect x="8" width="8" height="16" fill="#1f2937"/></pattern></defs><path d="M30 48a30 30 0 0 1 60 0z" fill="#facc15" stroke="#a16207" stroke-width="2"/><rect x="55" y="16" width="10" height="32" rx="3" fill="#eab308" stroke="#a16207" stroke-width="2"/><rect x="22" y="48" width="76" height="8" rx="4" fill="#eab308" stroke="#a16207" stroke-width="2"/><rect x="14" y="68" width="92" height="14" rx="3" fill="url(#st)" stroke="#1f2937" stroke-width="2"/><rect x="24" y="82" width="6" height="14" fill="#6b7280"/><rect x="90" y="82" width="6" height="14" fill="#6b7280"/></svg>`;
+
+const card="rounded-2xl bg-white dark:bg-slate-900 p-5 shadow-sm ring-1 ring-slate-200 dark:ring-slate-800";
+
+function home(){return `
+<section class="relative overflow-hidden bg-gradient-to-b from-slate-950 via-sky-950 to-cyan-900 text-white">
+  <div class="relative z-10 mx-auto max-w-4xl px-5 pt-20 pb-64 sm:pt-28 sm:pb-80 text-center">
+    <div class="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-2xl bg-cyan-400/20 ring-1 ring-cyan-300/40 text-3xl">💧</div>
+    <h1 class="text-5xl sm:text-7xl font-extrabold tracking-tight">Aqua<span class="bg-gradient-to-r from-cyan-300 via-teal-300 to-lime-300 bg-clip-text text-transparent">Globe</span></h1>
+    <p class="mt-5 text-lg sm:text-xl text-sky-100/90 max-w-2xl mx-auto">Tracking the quality of drinking water around the world, from pristine springs to hazardous supplies, so clean water for everyone becomes impossible to ignore.</p>
+    <button data-go="countries" class="mt-8 rounded-full bg-cyan-400 px-7 py-3.5 font-semibold text-slate-900 shadow-lg shadow-cyan-500/30 hover:bg-cyan-300">Explore Global Data →</button>
+    <div class="mt-9 mx-auto flex max-w-sm items-center gap-3 text-xs text-sky-100/80"><span>Pristine</span><span class="h-2 flex-1 rounded-full" style="background:linear-gradient(90deg,#67e8f9,#22d3ee,#a7c957,#7a5c2b,#2a1d0e)"></span><span>Hazardous</span></div>
+  </div>
+  ${BIG}<div aria-hidden="true" class="absolute inset-x-0 bottom-0 pointer-events-none" style="height:100px">${waves}</div>
+</section>
+<section class="mx-auto max-w-5xl px-5 py-12 grid gap-5 sm:grid-cols-3">
+  ${[["🌍","Every country","All 195 sovereign and observer states in one searchable list."],["🧪","Real metrics","Safety index, pH and sanitation status per country."],["🛡","Curated data","Entries are reviewed and published by the AquaGlobe owner."]].map(([i,t,x])=>`<div class="${card}"><div class="text-2xl">${i}</div><h3 class="mt-2 font-semibold text-lg">${t}</h3><p class="mt-1 text-sm opacity-70">${x}</p></div>`).join("")}
+</section>`}
+
+const badge=(r,big)=>{const sz=big?"px-3 py-1 text-sm":"px-2.5 py-0.5 text-xs";if(r&&r.finished){const st=status(r.safetyIndex);return `<span class="shrink-0 rounded-full ${sz} font-semibold ${st[1]}">${st[0]}</span>`}return `<span class="shrink-0 rounded-full bg-slate-100 text-slate-600 ${sz} font-semibold ring-1 ring-slate-300">Not Finished</span>`};
+function countryCard(c){
+  const r=data()[c.id],done=r&&r.finished,st=done?status(r.safetyIndex):null;
+  return `<article data-open="${c.id}" class="${card} flex flex-col cursor-pointer transition hover:shadow-md">
+  <header class="flex items-start justify-between gap-2"><h3 class="font-semibold">${esc(c.name)}</h3>${badge(r)}</header>
+  ${done?`<div class="mt-4 space-y-2.5 text-sm">
+    <div><div class="flex justify-between opacity-70"><span>Water Safety Index</span><b>${r.safetyIndex}/100</b></div><div class="mt-1 h-2 rounded-full bg-slate-200 dark:bg-slate-700"><div class="h-2 rounded-full ${st[2]}" style="width:${r.safetyIndex}%"></div></div></div>
+    <p>🧪 pH <b>${r.ph}</b></p><p>🚰 Sanitation: <b>${esc(r.sanitation)}</b></p></div>`
+  :`<div class="mt-3 flex flex-1 flex-col items-center justify-center rounded-xl bg-amber-50 px-3 py-4 text-center text-amber-900">${HAT}<p class="mt-2 text-sm font-medium">Data collection underway</p><p class="text-xs text-amber-700">Check back soon: we’re still testing here.</p></div>`}
+  <p class="mt-3 text-xs font-medium text-sky-600">View details →</p>
+  ${S.admin?`<button data-edit="${c.id}" class="mt-3 rounded-lg bg-sky-600 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-700">✏️ Edit data</button>`:""}</article>`}
+
+function grid(){
+  const t=S.q.trim().toLowerCase(),d=data(),fin=c=>!!(d[c.id]&&d[c.id].finished);
+  const list=COUNTRIES.filter(c=>t?c.name.toLowerCase().includes(t):fin(c));
+  $("#count").textContent=t?`${list.length} match${list.length===1?"":"es"} for “${S.q.trim()}”`:`${COUNTRIES.filter(fin).length} with published data · search to look up any of the 195 countries`;
+  $("#grid").innerHTML=list.length?list.map(countryCard).join(""):`<p class="col-span-full mt-10 text-center opacity-60">${t?`No countries match “${esc(S.q)}”.`:"No published data yet. Search for a country above."}</p>`;
+}
+
+function countries(){return `<section class="mx-auto max-w-6xl px-4 py-9">
+  <h1 class="text-3xl font-extrabold">Countries</h1><p id="count" class="mt-1 opacity-70"></p>
+  ${S.admin?`<div class="mt-4 rounded-xl border border-emerald-300 bg-emerald-50 p-4 text-sm text-emerald-900 flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between"><p>🛡 Admin mode: edits are saved as a draft in this browser. Export <code>data.json</code> to publish for everyone.</p><div class="flex gap-2"><button data-act="export" class="rounded-lg bg-emerald-600 px-3 py-2 font-semibold text-white">⬇ Export</button>${S.draft?`<button data-act="reset" class="rounded-lg border border-emerald-400 px-3 py-2 font-semibold">↺ Discard draft</button>`:""}</div></div>`:""}
+  <div class="mt-5 flex flex-col gap-3 sm:flex-row">
+    <input id="q" value="${esc(S.q)}" placeholder="🔍  Search any country…" aria-label="Search countries" class="flex-1 rounded-xl border border-slate-300 bg-white dark:bg-slate-900 dark:border-slate-700 px-4 py-3 shadow-sm focus:outline-none focus:ring-4 focus:ring-sky-200">
+    
+  </div>
+  <div id="grid" class="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"></div></section>`}
+
+function how(){
+  const steps=[["1","Browse as a visitor","Everyone starts in View-Only mode. Only countries with finished data are listed; search to look up any of the 195 countries, then click one for its full page. Visitors never see edit buttons."],["2","Read the status","Finished countries show a Water Safety Index (0–100), pH and sanitation. 70+ is Safe, 40–69 Moderate, below 40 Critical. Unfinished ones show the construction sign."],["3","Owner unlocks editing","Malcolm clicks “Admin Login” in the footer and enters his email and passcode. It is checked as a SHA-256 hash in the browser, then edit buttons appear on every card."],["4","Edit and publish","Edits save as a draft in the owner’s browser. Export data.json, commit it to the GitHub repo, and every visitor sees the update."]];
+  return `<section class="mx-auto max-w-4xl px-4 py-10"><h1 class="text-3xl font-extrabold">How AquaGlobe works</h1>
+  <div class="mt-6 grid gap-4 sm:grid-cols-2">${steps.map(([n,t,x])=>`<div class="${card}"><div class="flex h-8 w-8 items-center justify-center rounded-full bg-sky-600 text-white font-bold">${n}</div><h3 class="mt-3 font-semibold">${t}</h3><p class="mt-1 text-sm opacity-75">${x}</p></div>`).join("")}</div>
+  <div class="mt-6 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900"><b>Security note:</b> a static site has no server, so the admin check runs in the browser. It keeps visitors from changing what others see (public data is the committed file only), but it is not a substitute for server-side authentication.<br><br>Every real country starts as “Not Finished” and stays hidden until searched for. “Wonderland” is a test entry with randomized values.</div></section>`}
+
+function country(){
+  const c=COUNTRIES.find(x=>x.id===S.cid),back=`<button data-go="countries" class="text-sm text-sky-600 hover:underline">← All countries</button>`;
+  if(!c)return `<section class="mx-auto max-w-3xl px-4 py-10">${back}<p class="mt-6 opacity-70">Country not found.</p></section>`;
+  const r=data()[c.id],done=r&&r.finished,st=done?status(r.safetyIndex):null;
+  const tile=(l,v)=>`<div class="${card}"><p class="text-xs uppercase tracking-wide opacity-60">${l}</p><p class="mt-1 text-xl font-bold">${v}</p></div>`;
+  return `<section class="mx-auto max-w-3xl px-4 py-9">${back}
+  <div class="mt-4 flex flex-wrap items-center gap-3"><h1 class="text-3xl font-extrabold">${esc(c.name)}</h1>${badge(r,true)}</div>
+  ${done?`<div class="mt-6 grid gap-4 sm:grid-cols-3">${tile("Water Safety Index",r.safetyIndex+"/100")}${tile("pH level",r.ph)}${tile("Sanitation",esc(r.sanitation))}</div>
+  <div class="mt-4 h-3 rounded-full bg-slate-200 dark:bg-slate-700"><div class="h-3 rounded-full ${st[2]}" style="width:${r.safetyIndex}%"></div></div>
+  <div class="${card} mt-6"><h2 class="text-lg font-bold">Why is the water quality like this?</h2><p class="mt-2 whitespace-pre-line opacity-90">${esc(r.description||"No explanation has been added for this country yet.")}</p></div>`
+  :`<div class="mt-6 flex flex-col items-center rounded-2xl bg-amber-50 px-4 py-10 text-center text-amber-900">${HAT}<p class="mt-3 font-semibold">Data collection underway</p><p class="text-sm text-amber-700">There is no water quality data for ${esc(c.name)} yet. Check back soon.</p></div>`}
+  ${S.admin?`<button data-edit="${c.id}" class="mt-6 rounded-lg bg-sky-600 px-4 py-2.5 font-semibold text-white hover:bg-sky-700">✏️ Edit data</button>`:""}</section>`}
+
+function render(){
+  $("#app").innerHTML=S.page==="home"?home():S.page==="countries"?countries():S.page==="country"?country():how();
+  document.querySelectorAll(".nav").forEach(b=>b.classList.toggle("bg-sky-100",b.dataset.go===S.page)||b.classList.toggle("text-sky-800",b.dataset.go===S.page));
+  $("#badge").classList.toggle("hidden",!S.admin);
+  $("#adminBtn").textContent=S.admin?"🔓 Admin log out":"🔒 Admin Login";
+  if(S.page==="countries")grid();
+  window.scrollTo({top:0});
+}
+
+const sha=async t=>[...new Uint8Array(await crypto.subtle.digest("SHA-256",new TextEncoder().encode(t)))].map(b=>b.toString(16).padStart(2,"0")).join("");
+const inp="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-sky-300";
+const shell=(inner)=>`<div id="ov" class="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-slate-900/60 p-4">${inner}</div>`;
+const closeM=()=>$("#modal").innerHTML="";
+
+function loginModal(){$("#modal").innerHTML=shell(`<form id="login" class="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl text-slate-800"><h2 class="text-lg font-bold">🛡 Admin Login</h2><p class="text-sm text-slate-500">Only the site owner can edit data.</p>
+<label class="mt-4 block text-sm font-medium">Email<input id="em" type="email" required class="${inp}"></label><label class="mt-3 block text-sm font-medium">Passcode<input id="pw" type="password" required class="${inp}"></label>
+<p id="err" class="mt-3 hidden text-sm text-red-600" role="alert">Incorrect email or passcode.</p><button class="mt-5 w-full rounded-lg bg-sky-600 py-2.5 font-semibold text-white hover:bg-sky-700">Unlock editing</button><button type="button" data-act="close" class="mt-2 w-full text-sm text-slate-500">Cancel</button></form>`);$("#em").focus()}
+
+function editModal(id){
+  const c=COUNTRIES.find(x=>x.id===id),r=data()[id]||{};
+  $("#modal").innerHTML=shell(`<form id="edit" data-id="${id}" class="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl text-slate-800"><h2 class="text-lg font-bold">Edit · ${esc(c.name)}</h2>
+<label class="mt-4 flex items-center justify-between rounded-lg bg-slate-100 px-3 py-2.5 text-sm font-medium">Finished<input id="fin" type="checkbox" ${r.finished?"checked":""} class="h-5 w-5 accent-sky-600"></label>
+<label class="mt-3 block text-sm font-medium">Water Safety Index (0–100)<input id="si" type="number" min="0" max="100" value="${r.safetyIndex??50}" class="${inp}"></label>
+<label class="mt-3 block text-sm font-medium">pH level (0–14)<input id="ph" type="number" min="0" max="14" step="0.1" value="${r.ph??7}" class="${inp}"></label>
+<label class="mt-3 block text-sm font-medium">Sanitation status<select id="sa" class="${inp}">${SAN.map(s=>`<option ${s===(r.sanitation||SAN[1])?"selected":""}>${s}</option>`).join("")}</select></label>
+<label class="mt-3 block text-sm font-medium">Why is the water quality like this?<textarea id="ds" rows="4" maxlength="600" class="${inp}">${esc(r.description||"")}</textarea></label>
+<div class="mt-5 flex gap-2"><button class="flex-1 rounded-lg bg-sky-600 py-2.5 font-semibold text-white">Save</button><button type="button" data-act="close" class="rounded-lg border border-slate-300 px-4">Cancel</button></div></form>`)}
+
+function save(next){S.draft=next;try{localStorage.setItem("ag_draft",JSON.stringify(next))}catch(e){}}
+
+document.addEventListener("click",async e=>{
+  const t=e.target.closest("[data-go],[data-open],[data-edit],[data-act],#adminBtn,#ov");if(!t)return;
+  if(t.dataset.go){location.hash=t.dataset.go}
+  else if(t.dataset.open){location.hash="c-"+t.dataset.open}
+  else if(t.dataset.edit&&S.admin)editModal(t.dataset.edit);
+  else if(t.id==="adminBtn"){if(S.admin){S.admin=false;try{sessionStorage.removeItem("ag_admin")}catch(e){}render()}else loginModal()}
+  else if(t.dataset.act==="close"||(t.id==="ov"&&e.target===t))closeM();
+  else if(t.dataset.act==="reset"&&S.admin){S.draft=null;try{localStorage.removeItem("ag_draft")}catch(e){}render()}
+  else if(t.dataset.act==="export"&&S.admin){const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([JSON.stringify(data(),null,2)],{type:"application/json"}));a.download="data.json";a.click()}
+});
+document.addEventListener("input",e=>{if(e.target.id==="q"){S.q=e.target.value;grid()}});
+document.addEventListener("submit",async e=>{
+  e.preventDefault();
+  if(e.target.id==="login"){
+    const em=$("#em").value.trim().toLowerCase(),ok=await sha(em+":"+$("#pw").value)===ADMIN_HASH;
+    if(!ok)return $("#err").classList.remove("hidden");
+    S.admin=true;try{sessionStorage.setItem("ag_admin","1")}catch(x){}closeM();S.page="countries";location.hash="countries";render();
+  }else if(e.target.id==="edit"&&S.admin){
+    const id=e.target.dataset.id,cl=(v,a,b)=>Math.min(b,Math.max(a,Number(v)||0));
+    save({...data(),[id]:{finished:$("#fin").checked,safetyIndex:cl($("#si").value,0,100),ph:cl($("#ph").value,0,14),sanitation:$("#sa").value,description:$("#ds").value.slice(0,600),updatedAt:new Date().toISOString()}});
+    closeM();render();
+  }
+});
+function route(){const h=location.hash.slice(1);if(h.startsWith("c-")){S.page="country";S.cid=h.slice(2)}else S.page=["countries","how"].includes(h)?h:"home";render()}
+addEventListener("hashchange",route);route();
+</script>
+</body>
+</html>
